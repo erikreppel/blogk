@@ -19,7 +19,7 @@ type User struct {
 type Post struct {
 	R         big.Int
 	S         big.Int
-	Signed    []byte
+	Hashed    []byte
 	Raw       []byte
 	UserID    []byte
 	Signature []byte
@@ -32,7 +32,7 @@ func (p *Post) Verify(key []byte) error {
 		return errors.Wrap(err, "Failed to load public key")
 	}
 	pubkey := pk.(*ecdsa.PublicKey)
-	if ecdsa.Verify(pubkey, p.Signed, &p.R, &p.S) {
+	if ecdsa.Verify(pubkey, p.Raw, &p.R, &p.S) {
 		return nil
 	}
 	return errors.New("Failed to verify that the correct private key signed the message")
