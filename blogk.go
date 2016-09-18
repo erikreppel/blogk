@@ -9,7 +9,7 @@ import (
 	// "encoding/base64"
 	"encoding/json"
 	"fmt"
-	// "strings"
+	"strings"
 
 	"github.com/erikreppel/blogk/types"
 	"github.com/pkg/errors"
@@ -69,15 +69,26 @@ func (blogk *Blogk) AppendTx(tx []byte) tmspTypes.Result {
 
 	switch command {
 	case UserConst:
-		err := blogk.insertUser(body)
+		userID, err := blogk.insertUser(body)
 		if err != nil {
+			log.Println("ERROR:", err)
 			return tmspTypes.ErrBaseInvalidInput
 		}
-		return tmspTypes.OK
+		l := fmt.Sprintln("Successfully inserted as id", string(userID))
+		return tmspTypes.NewResultOK(userID, l)
+	case PostConst:
+		id, err := blogk.insertPost(body)
+		if err != nil {
+			log.Println("ERROR:", err)
+			return tmspTypes.ErrBaseInvalidInput
+		}
+		l := fmt.Sprintln("Successfully inserted post as id", string(id))
+		return tmspTypes.NewResultOK(id, l)
 	default:
-		return tmspTypes.ErrBaseInsufficientGasPrice
+		err := fmt.Errorf("unsupported %s", command)
+		log.Println("ERROR: ", err)
+		return tmspTypes.ErrBaseInvalidInput
 	}
-
 }
 
 // CheckTx just always returns true for now
@@ -100,29 +111,62 @@ func (blogk *Blogk) Commit() tmspTypes.Result {
 // Query verifies if something is in the blockchain in log(n) time
 func (blogk *Blogk) Query(query []byte) tmspTypes.Result {
 	index, value, exists := blogk.users.Get(query)
+	if !exists {
+		return tmspTypes.ErrBadNonce
+	}
 	resStr := fmt.Sprintf("Index=%v value=%v exists=%v", index, string(value), exists)
-	return tmspTypes.NewResultOK([]byte(resStr), "")
+	log.Println(resStr)
+	return tmspTypes.NewResultOK([]byte(value), "")
 }
 
-func (blogk *Blogk) insertUser(raw []byte) error {
+func (blogk *Blogk) insertPost(raw []byte) ([]byte, error) {
+	splt := strings.Split(string(raw), ".")
+	userID := splt[0]
+	postHash := splt[1]
+	rawPost := splt[2]
+	// get public key for that user
+	resp := blogk.Query([]byte(userID))
+	if resp.Code.String() == tmspTypes.ErrBadNonce.Code.String() {
+		log.Println("ERROR: bad nonce")
+		return nil, errors.New("Public Key not found")
+	} else if len(resp.Data) == 0 {
+		log.Println("ERROR: Got no data back when looking up public key")
+		return nil, errors.New("Public Key not found")
+	}
+	key := resp.Data
+	post := &types.Post{}
+	err := json.Unmarshal([]byte(rawPost), post)
+	if err != nil {
+		e := errors.Wrap(err, "Failed to Unmarshal json")
+		log.Println(e)
+		return nil, e
+	}
+	if userID != string(post.UserID) {
+		err := errors.New("UserID from raw post does not match that in the body")
+		return nil, err
+	}
+	// verify post origins
+	err = post.Verify(key)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to verify poster")
+	}
+	postID := []byte(string(post.UserID) + "." + postHash)
+	blogk.posts.Set(postID, post.Raw)
+	return postID, nil
+}
+
+func (blogk *Blogk) insertUser(raw []byte) ([]byte, error) {
 	user := &types.User{}
 	err := json.Unmarshal(raw, user)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = verifyIDHashMatch(user)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	blogk.users.Set(user.ID, user.Key)
-	return nil
-
-}
-
-// where k is the public key and sig is the signed thing
-func verifySigning(k, sig []byte) error {
-
-	return nil
+	return user.ID, nil
 }
 
 func verifyIDHashMatch(user *types.User) error {
