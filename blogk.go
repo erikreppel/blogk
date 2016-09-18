@@ -1,6 +1,7 @@
 package blogk
 
 import (
+	"log"
 	// "crypto/rsa"
 	// "crypto/sha1"
 	"crypto/sha256"
@@ -8,7 +9,7 @@ import (
 	// "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
+	// "strings"
 
 	"github.com/erikreppel/blogk/types"
 	"github.com/pkg/errors"
@@ -19,8 +20,8 @@ import (
 
 // Constants for a switch
 const (
-	UserConst = "USER"
-	PostConst = "POST"
+	UserConst = "USER="
+	PostConst = "POST="
 )
 
 // NewBlogK returns a new BlogK node
@@ -62,19 +63,19 @@ func (blogk *Blogk) SetOption(key, value string) (log string) {
 // AppendTx adds a post of the chain after verifying it was sent by a proper key
 // tx will be in the form COMMAND=PubKey{}
 func (blogk *Blogk) AppendTx(tx []byte) tmspTypes.Result {
-	parts := strings.Split(string(tx), "=")
-	if len(parts) != 2 {
-		return tmspTypes.ErrBaseInvalidInput
-	}
-	switch parts[0] {
+	command := string(tx)[:5]
+	body := []byte(string(tx)[5:])
+	log.Println("parts:", string(body))
+
+	switch command {
 	case UserConst:
-		err := blogk.insertUser([]byte(parts[1]))
+		err := blogk.insertUser(body)
 		if err != nil {
 			return tmspTypes.ErrBaseInvalidInput
 		}
 		return tmspTypes.OK
 	default:
-		return tmspTypes.ErrBaseInvalidInput
+		return tmspTypes.ErrBaseInsufficientGasPrice
 	}
 
 }
